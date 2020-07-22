@@ -1,0 +1,3 @@
+include ':OmakHelper'
+include ':app'
+rootProject.name = "OmakAndroidLibrary"
