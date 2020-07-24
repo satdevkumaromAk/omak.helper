@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="referrer_id">ijariit</string>
+    <string name="app_name">Research Experts</string>
+    <string name="network_connection_timeout">timeout</string>
+    <string name="retry">retry</string>
+    <string name="cancel">cancel</string>
+    <string name="please_wait_message">"please wait "</string>
+</resources>

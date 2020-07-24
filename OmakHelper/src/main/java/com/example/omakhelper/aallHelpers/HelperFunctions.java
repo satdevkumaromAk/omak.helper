@@ -1,4 +1,4 @@
-package com.example.omakhelper;
+package com.example.omakhelper.aallHelpers;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
@@ -12,7 +12,6 @@ import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.telephony.TelephonyManager;
 import android.text.format.DateFormat;
-import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.AdapterView;
@@ -28,6 +27,14 @@ import android.widget.Toast;
 
 import androidx.core.content.res.ResourcesCompat;
 
+import com.example.omakhelper.R;
+import com.example.omakhelper.aallHelpers.Retofit.ApiClient;
+import com.example.omakhelper.aallHelpers.Retofit.ApiHelper;
+import com.example.omakhelper.aallHelpers.Retofit.ApiInterface;
+import com.google.gson.Gson;
+import com.kaopiz.kprogresshud.KProgressHUD;
+
+import org.jetbrains.annotations.NotNull;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -40,15 +47,272 @@ import java.util.TimeZone;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import io.realm.Realm;
+import io.realm.RealmConfiguration;
+import io.realm.RealmList;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+
 public class HelperFunctions {
     static TextView tvTitles, tvUpdateData;
     static LinearLayout llBackIcon, llMenu;
     static ImageView ivEditAction, ivContactSupport, ivSearchIcon, ivHomeIcon, ivUploadFiles, ivRefreshData, ivDelete;
-
+    Realm realm;
+    RealmHelpers realmHelpers;
     boolean isReturn = false;
     String mailFor = "";
     private HelperFunctionsListener listener;
 
+    ///// send lead email ////
+    public static boolean sendLeadEmailToUsersServices(final Context context, String... userData) {
+        Alerts.log("MailData", "MailData");
+        ArrayList<String> leadId = new ArrayList<>();
+        leadId.add(userData[2]);
+        boolean isdata = false;
+        final ProgressDialog dialog = new ProgressDialog(context);
+        dialog.setCancelable(true);
+        dialog.setMessage(context.getString(R.string.please_wait_message));
+        ////  Api interface here////
+
+        ApiInterface apiService = new ApiClient().getClient().create(ApiInterface.class);
+        AlmightMainJSonModel task = new ApiClient().prepareMainJsModel("ap-user", context);
+        task.setReferrer("ijariit");
+        task.setCalculation_ids(leadId);
+        task.setUser_id(userData[0]);
+        task.setMail_for(userData[1]);
+        Alerts.printTask("MailTask", task);
+        Call<ResponseGeneral> call = apiService.sendLeadsMail(task);
+
+        ApiHelper.enqueueWithRetry(context, call, new Callback<ResponseGeneral>() {
+            @Override
+            public void onResponse(Call<ResponseGeneral> call, Response<ResponseGeneral> response) {
+                dialog.dismiss();
+                Alerts.log("MailData", new Gson().toJson(response.body()));
+                if (response.isSuccessful()) {
+                    Alerts.toast(context, response.body() != null ? response.body().getMessage() : null);
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ResponseGeneral> call, Throwable t) {
+                dialog.dismiss();
+                return;
+            }
+        });
+
+        return false;
+    }
+
+    //// create new user agains lead api    /////////
+    public static boolean creatUserAgainstLead(final Context context, String... data) {
+        boolean isdata = false;
+        final ProgressDialog dialog = new ProgressDialog(context);
+        dialog.setCancelable(true);
+        dialog.setMessage(context.getString(R.string.please_wait_message));
+
+        ////  Api interface here////
+        ApiInterface apiService = new ApiClient().getClient().create(ApiInterface.class);
+        AlmightMainJSonModel task = new ApiClient().prepareMainJsModel("ap-user", context);
+
+        task.setReferrer("ijariit");
+        task.setId(data[0]);
+        Call<ResponseGeneral> call = apiService.createUserFromLeads(task);
+        ApiHelper.enqueueWithRetry(context, call, new Callback<ResponseGeneral>() {
+            @Override
+            public void onResponse(Call<ResponseGeneral> call, Response<ResponseGeneral> response) {
+                dialog.dismiss();
+                if (response.isSuccessful()) {
+                    new RealmHelpers(context).setBooleanFlag(RealmHelpers.allSubscriberListUpdated, false);
+                    new RealmHelpers(context).setBooleanFlag(RealmHelpers.allLeadsUpdated, false);
+                    Alerts.toast(context, response.body() != null ? response.body().getMessage() : null);
+
+                    Activity activity = App.getActivity(context);
+                    activity.onBackPressed();
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ResponseGeneral> call, Throwable t) {
+                dialog.dismiss();
+                return;
+            }
+        });
+
+        return false;
+    }
+
+    //////// send normal email ////////
+    public static boolean sendNormalEmailToUsersServices(final Context context, String mailFor, String userId) {
+        final ProgressDialog dialog = new ProgressDialog(context);
+        dialog.setCancelable(true);
+        dialog.setMessage(context.getString(R.string.please_wait_message));
+
+        ////  Api interface here////
+        ApiInterface apiService = new ApiClient().getClient().create(ApiInterface.class);
+        AlmightMainJSonModel task = new ApiClient().prepareMainJsModel("ap-user", context);
+
+        task.setReferrer("ijariit");
+        task.setUser_id(userId);
+        task.setMail_for(mailFor);
+        Call<ResponseGeneral> call = apiService.getSendMailData(task);
+        ApiHelper.enqueueWithRetry(
+                context,
+                call,
+                new Callback<ResponseGeneral>() {
+                    @Override
+                    public void onResponse(Call<ResponseGeneral> call, Response<ResponseGeneral> response) {
+                        dialog.dismiss();
+                        if (response.isSuccessful()) {
+
+                            Alerts.toast(context, response.body() != null ? response.body().getMessage() : null);
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(Call<ResponseGeneral> call, Throwable t) {
+                        dialog.dismiss();
+                        return;
+                    }
+                });
+
+        return false;
+    }
+
+    //////// send projects email ////////
+    public static boolean sendProjectsEmailToUsersServices(final Context context, String mailFor, String projectID) {
+        final ProgressDialog dialog = new ProgressDialog(context);
+        dialog.setCancelable(true);
+        dialog.setMessage(context.getString(R.string.please_wait_message));
+
+        ////  Api interface here////
+        ApiInterface apiService = new ApiClient().getClient().create(ApiInterface.class);
+        AlmightMainJSonModel task = new ApiClient().prepareMainJsModel("ap-user", context);
+
+        task.setReferrer("ijariit");
+        task.setProjectId(projectID);
+        task.setMail_for(mailFor);
+        Alerts.printTask("ProjectMails", task);
+
+
+        Call<ResponseGeneral> call = apiService.getSendMailData(task);
+        ApiHelper.enqueueWithRetry(
+                context,
+                call,
+                new Callback<ResponseGeneral>() {
+                    @Override
+                    public void onResponse(@NotNull Call<ResponseGeneral> call, @NotNull Response<ResponseGeneral> response) {
+                        dialog.dismiss();
+                        if (response.isSuccessful()) {
+
+                            Alerts.toast(context, response.body() != null ? response.body().getMessage() : null);
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(Call<ResponseGeneral> call, Throwable t) {
+                        dialog.dismiss();
+                        return;
+                    }
+                });
+
+        return false;
+    }
+
+    //////// send leads bulk  emails ////////
+    public static boolean sendBulkEmails(final Context context, String mailFor, List<String> ids) {
+        final ProgressDialog dialog = new ProgressDialog(context);
+        dialog.setCancelable(true);
+        dialog.setMessage(context.getString(R.string.please_wait_message));
+
+        ////  Api interface here////
+        ApiInterface apiService = new ApiClient().getClient().create(ApiInterface.class);
+        AlmightMainJSonModel task = new ApiClient().prepareMainJsModel("ap-user", context);
+
+        task.setReferrer("ijariit");
+        task.setMail_for(mailFor);
+        task.setCalculation_ids(ids);
+        Alerts.printTask("BulkEmailData", task);
+        Call<ResponseGeneral> call = apiService.sendBulkEmails(task);
+        ApiHelper.enqueueWithRetry(
+                context,
+                call,
+                new Callback<ResponseGeneral>() {
+                    @Override
+                    public void onResponse(Call<ResponseGeneral> call, Response<ResponseGeneral> response) {
+                        dialog.dismiss();
+                        if (response.isSuccessful()) {
+
+                            Alerts.toast(context, response.body() != null ? response.body().getMessage() : null);
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(Call<ResponseGeneral> call, Throwable t) {
+                        dialog.dismiss();
+                        return;
+                    }
+                });
+
+        return false;
+    }
+
+
+    /*delete Comment service or api */
+    public static void deleteCommentsService(final Context context, String... deleteUserData) {
+        final ProgressDialog dialog = new ProgressDialog(context);
+        dialog.setCancelable(true);
+        dialog.setMessage(context.getString(R.string.please_wait_message));
+        ////  Api interface here////
+        ApiInterface apiService = new ApiClient().getClient().create(ApiInterface.class);
+        AlmightMainJSonModel task = new ApiClient().prepareMainJsModel("ap-admin", context);
+
+        task.setReferrer("ijariit");
+        task.setUser_id(deleteUserData[0]);
+
+        Call<ResponseGeneral> call = apiService.deleteCommentsByAdmin(task);
+        ApiHelper.enqueueWithRetry(
+                context,
+                call,
+                new Callback<ResponseGeneral>() {
+                    @Override
+                    public void onResponse(Call<ResponseGeneral> call, Response<ResponseGeneral> response) {
+                        dialog.dismiss();
+                        if (response.isSuccessful()) {
+
+                            Alerts.toast(context, response.body() != null ? response.body().getMessage() : null);
+                            //Toast.makeText(context, response.message(), Toast.LENGTH_LONG).show();
+                            new RealmHelpers(context).setBooleanFlag(RealmHelpers.allSubscriberListUpdated, false);
+                           /* Intent intent = new Intent(context, AdminPanelSubscribers.class);
+                            context.startActivity(intent);*/
+                        }
+                    }
+
+                    @Override
+                    public void onFailure(Call<ResponseGeneral> call, Throwable t) {
+                        dialog.dismiss();
+                        return;
+                        //// RealmCallLogModel error here since request failed
+                        //// Toast.makeText(contextThis, "Something failed, please try again.",
+                        //// Toast.LENGTH_LONG).show();
+                    }
+                });
+    }
+
+    /*Realm Configuration */
+    public static Realm getRealm(String whichRealm, Context applicationContext) {
+        Realm.init(applicationContext);
+        if ("messages".equals(whichRealm)) {
+            RealmConfiguration config = new RealmConfiguration.Builder()
+                    .name("messages.realm")
+                    .deleteRealmIfMigrationNeeded()
+                    //// .schemaVersion(1)
+                    //// .migration(new AppFlowDatabaseRealmMigration())
+                    .build();
+            Realm.setDefaultConfiguration(config);
+        }
+        return Realm.getDefaultInstance();
+    }
 
     /* GEt Date Method*/
     public static Date convertString2Date(String dateString) {
@@ -99,6 +363,14 @@ public class HelperFunctions {
         return str;
     }
 
+    public static String getIntentExtra(Context context, String key) {
+        Activity activity = App.getActivity(context);
+        String userId = activity.getIntent().getStringExtra("userId");
+        return userId;
+
+
+    }
+
 
 
     ////  get All New Calculation data Api   /////////
@@ -136,6 +408,7 @@ public class HelperFunctions {
             context.startActivity(intent);
             success = true;
         } catch (Exception e) {
+            Alerts.toast(context, "Message failed: " + e.getMessage());
             //Toast.makeText(context, "Message failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
 
@@ -268,11 +541,6 @@ public class HelperFunctions {
         return simpleDateFormat.format(todayDate);
     }
 
-    public static void log(String data) {
-        Log.e("LogData",data);
-
-    }
-
 
     public String dateDifference(String dateStart, String dateStop) {
 
@@ -313,6 +581,7 @@ public class HelperFunctions {
         TimeZone tz = TimeZone.getDefault();
         return getCurrentTimezoneOffset() + "/" + tz.getRawOffset();
     }
+
     public String getCurrentTimezoneOffset() {
         TimeZone tz = TimeZone.getDefault();
         Calendar cal = GregorianCalendar.getInstance(tz);
@@ -332,7 +601,6 @@ public class HelperFunctions {
     public String convertUnix2Date(Long time) {
         return DateFormat.format("dd-MM-yyyy hh:mm:ss", time).toString();
     }
-
 
     //this interface is user for finding my admin is upto date with data
     public interface HelperFunctionsListener {
